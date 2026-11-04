@@ -9,6 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.108",
+    "@prisma/client": "^7.10.1",
+    "ag-grid-community": "^36.3.0",
+    "ag-grid-react": "^36.3.0",
+    "ai": "^7.0.162",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0"
