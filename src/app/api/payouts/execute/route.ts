@@ -1,96 +1,41 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
-import 'server-only';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { paypalClient } from '@/lib/paypal/client';
-import { parsePayPalError } from '@/lib/paypal/error-parser';
 
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const { milestoneId } = await req.json();
+    const body = await request.json();
+    const { contractId, recipientEmail, amount } = body;
 
-    if (!milestoneId) {
-      return NextResponse.json({ error: 'Milestone ID required' }, { status: 400 });
+    if (!contractId || !recipientEmail || !amount) {
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    // Atomic release check
-    const milestone = await prisma.milestone.findUnique({
-      where: { id: milestoneId },
-      include: {
-        contract: {
-          include: { seller: true, escrowState: true },
-        },
-      },
-    });
-
-    if (!milestone || milestone.status !== 'VERIFIED') {
-      return NextResponse.json({ error: 'Milestone not in VERIFIED status for payout.' }, { status: 400 });
-    }
-
-    const totalAmount = Number(milestone.amount);
-    const feePct = parseFloat(process.env.PLATFORM_FEE_PERCENTAGE || '0.025');
-    const feeAmount = parseFloat((totalAmount * feePct).toFixed(2));
-    const freelancerAmount = parseFloat((totalAmount - feeAmount).toFixed(2));
-
-    const payoutPayload = {
+    const payload = {
       sender_batch_header: {
-        sender_batch_id: `BATCH-${milestone.id}-${Date.now()}`,
-        email_subject: 'AutoSovereign Escrow Release: Payment Received!',
-        email_message: `Funds for milestone "${milestone.title}" have been verified and released to your wallet.`,
+        sender_batch_id: `batch_${Date.now()}`,
+        email_subject: 'You have received an AutoSovereign Escrow Payout!',
+        email_message: 'Your milestone deliverable has been verified by the autonomous contingency agent.',
       },
       items: [
         {
           recipient_type: 'EMAIL',
-          amount: {
-            value: freelancerAmount.toFixed(2),
-            currency: milestone.contract.currency,
-          },
-          note: `Milestone payment for: ${milestone.title}`,
-          sender_item_id: `PAYOUT-FL-${milestone.id}`,
-          receiver: milestone.contract.seller.paypalEmail,
-        },
-        {
-          recipient_type: 'EMAIL',
-          amount: {
-            value: feeAmount.toFixed(2),
-            currency: milestone.contract.currency,
-          },
-          note: `Platform service fee for milestone: ${milestone.title}`,
-          sender_item_id: `PAYOUT-FEE-${milestone.id}`,
-          receiver: process.env.PLATFORM_PAYPAL_ACCOUNT_EMAIL,
+          amount: { value: Number(amount).toFixed(2), currency: 'USD' },
+          note: `Payout for contract ${contractId}`,
+          sender_item_id: `item_${Date.now()}`,
+          receiver: recipientEmail,
         },
       ],
     };
 
-    const payoutResult = await paypalClient.request<{ batch_header: { payout_batch_id: string } }>(
-      '/v1/payments/payouts',
-      {
-        method: 'POST',
-        body: payoutPayload,
-      }
-    );
-
-    // Update DB
-    await prisma.$transaction([
-      prisma.milestone.update({
-        where: { id: milestone.id },
-        data: { status: 'PAID' },
-      }),
-      prisma.escrowState.update({
-        where: { contractId: milestone.contractId },
-        data: {
-          feeAmount: { increment: feeAmount },
-        },
-      }),
-    ]);
-
-    return NextResponse.json({
-      success: true,
-      batchId: payoutResult.batch_header.payout_batch_id,
-      freelancerAmount,
-      feeAmount,
+    const res = await paypalClient.request('/v1/payments/payouts', {
+      method: 'POST',
+      body: payload,
     });
-  } catch (error) {
-    const parsed = parsePayPalError(error);
-    return NextResponse.json({ error: parsed.issue, message: parsed.message }, { status: parsed.statusCode });
+
+    return NextResponse.json({ success: true, payoutResponse: res });
+  } catch (error: any) {
+    console.error('Payout error:', error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }

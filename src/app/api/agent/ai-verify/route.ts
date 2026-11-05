@@ -30,15 +30,6 @@ export async function POST(request: Request) {
       const { text } = await generateText({
         model: openai('gpt-4o'),
         prompt: `You are AutoSovereign's autonomous escrow agent. Review milestone: "${milestone.title}" (${milestone.deliverable || 'Standard commit'}). Approve or reject deliverable.`,
-        tools: {
-          verifyDeliverableCommit: tool({
-            description: 'Verify code repository commit or deployment hash',
-            parameters: z.object({ status: z.enum(['APPROVED', 'REJECTED']) }),
-            execute: async ({ status }: { status: 'APPROVED' | 'REJECTED' }) => {
-              return { result: status };
-            },
-          }),
-        },
       });
       agentReasoning = text;
     }

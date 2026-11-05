@@ -2,6 +2,10 @@ const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'sandbox_client_id_plac
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || 'sandbox_client_secret_placeholder';
 const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
 
+export interface PayPalRequestOptions extends Omit<RequestInit, 'body'> {
+  body?: any;
+}
+
 export const paypalClient = {
   async getAccessToken(): Promise<string> {
     if (PAYPAL_CLIENT_ID.includes('placeholder')) {
@@ -20,7 +24,7 @@ export const paypalClient = {
     return data.access_token;
   },
 
-  async request(endpoint: string, options: RequestInit = {}): Promise<any> {
+  async request<T = any>(endpoint: string, options: PayPalRequestOptions = {}): Promise<T> {
     const token = await this.getAccessToken();
     const headers = {
       'Content-Type': 'application/json',
@@ -29,14 +33,19 @@ export const paypalClient = {
     };
 
     if (PAYPAL_CLIENT_ID.includes('placeholder')) {
-      return { status: 'COMPLETED', mock: true, id: `mock_res_${Date.now()}` };
+      return { status: 'COMPLETED', mock: true, id: `mock_res_${Date.now()}` } as unknown as T;
     }
+
+    const body = options.body && typeof options.body !== 'string' 
+      ? JSON.stringify(options.body) 
+      : options.body;
 
     const res = await fetch(`${PAYPAL_API_BASE}${endpoint}`, {
       ...options,
+      body,
       headers,
     });
-    return res.json();
+    return res.json() as Promise<T>;
   },
 
   async createOrder(amount: string, currency: string = 'USD', contractId: string) {
@@ -55,7 +64,7 @@ export const paypalClient = {
     }
     return this.request('/v2/checkout/orders', {
       method: 'POST',
-      body: JSON.stringify({
+      body: {
         intent: 'CAPTURE',
         purchase_units: [
           {
@@ -63,7 +72,7 @@ export const paypalClient = {
             custom_id: contractId,
           },
         ],
-      }),
+      },
     });
   },
 };
