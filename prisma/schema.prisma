@@ -1,7 +1,6 @@
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 generator client {
@@ -51,7 +50,7 @@ model Contract {
   id          String          @id @default(uuid())
   title       String
   description String
-  totalAmount Decimal         @db.Decimal(12, 2)
+  totalAmount Decimal
   currency    String          @default("USD")
   status      ContractStatus  @default(DRAFT)
   buyerId     String
@@ -75,7 +74,7 @@ model Milestone {
   contractId  String
   title       String
   deliverable String
-  amount      Decimal         @db.Decimal(12, 2)
+  amount      Decimal
   status      MilestoneStatus @default(PENDING)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -89,8 +88,8 @@ model EscrowState {
   paypalOrderId  String       @unique
   captureId      String?      @unique
   status         EscrowStatus @default(CREATED)
-  amountCaptured Decimal      @default(0.00) @db.Decimal(12, 2)
-  feeAmount      Decimal      @default(0.00) @db.Decimal(12, 2)
+  amountCaptured Decimal      @default(0.00)
+  feeAmount      Decimal      @default(0.00)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -104,7 +103,7 @@ model AgentLog {
   action           String
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
-  payload          Json
+  payload          String
   createdAt        DateTime @default(now())
 
   contract         Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
@@ -114,7 +113,7 @@ model IdempotencyKey {
   id         String   @id @default(uuid())
   key        String   @unique
   contractId String
-  response   Json
+  response   String
   createdAt  DateTime @default(now())
   expiresAt  DateTime
 
