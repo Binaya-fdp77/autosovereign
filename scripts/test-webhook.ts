@@ -1,6 +1,4 @@
-﻿import fetch from 'node-fetch';
-
-async function simulateWebhook() {
+﻿async function simulateWebhook() {
   const webhookEvent = {
     id: "WH-SIMULATED-TEST-EVENT-ID",
     event_version: "1.0",

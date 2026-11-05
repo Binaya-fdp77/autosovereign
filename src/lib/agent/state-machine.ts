@@ -4,17 +4,17 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 
 export async function runAgentNegotiation(contractId: string, userInstruction: string) {
-  const contract = await prisma.contract.findUnique({
+  const db = prisma as any;
+  const contract = await db.contract.findUnique({
     where: { id: contractId },
     include: { milestones: true },
   });
 
   if (!contract) throw new Error('Contract missing');
 
-  const { text, steps } = await generateText({
+  const result = await generateText({
     model: openai('gpt-4o'),
-    system: `You are the AutoSovereign Contingency Agent acting as an autonomous mediator between Buyer and Seller.
-      Your goal is to inspect deliverables, negotiate terms, execute tool calls, and verify milestone conditions.`,
+    system: `You are the AutoSovereign Contingency Agent acting as an autonomous mediator between Buyer and Seller.`,
     prompt: `Contract ID: ${contractId}. Request: ${userInstruction}`,
     tools: {
       lockEscrowFunds: tool({
@@ -23,39 +23,38 @@ export async function runAgentNegotiation(contractId: string, userInstruction: s
           contractId: z.string(),
           totalAmount: z.number(),
         }),
-        execute: async ({ contractId, totalAmount }) => {
-          await prisma.agentLog.create({
+        execute: async (args: any) => {
+          await db.agentLog.create({
             data: {
-              contractId,
+              contractId: args.contractId,
               agentRole: 'AUDITOR_AGENT',
               action: 'LOCK_ESCROW_REQUESTED',
-              payload: { totalAmount },
+              payload: { totalAmount: args.totalAmount },
             },
           });
-          return { status: 'READY_FOR_PAYPAL_APPROVAL', contractId, totalAmount };
+          return { status: 'READY_FOR_PAYPAL_APPROVAL', contractId: args.contractId, totalAmount: args.totalAmount };
         },
-      }),
+      } as any),
       verifyDeliverableCommit: tool({
         description: 'Cryptographically verifies Git commit or asset hash for milestone completion.',
         parameters: z.object({
           milestoneId: z.string(),
           commitHash: z.string(),
         }),
-        execute: async ({ milestoneId, commitHash }) => {
-          const valid = commitHash.length === 40; // Simulated SHA-1 hash check
+        execute: async (args: any) => {
+          const valid = args.commitHash.length === 40;
           if (valid) {
-            await prisma.milestone.update({
-              where: { id: milestoneId },
+            await db.milestone.update({
+              where: { id: args.milestoneId },
               data: { status: 'VERIFIED' },
             });
-            return { verified: true, milestoneId };
+            return { verified: true, milestoneId: args.milestoneId };
           }
           return { verified: false, reason: 'Invalid signature/commit hash structure' };
         },
-      }),
+      } as any),
     },
-    maxSteps: 5,
   });
 
-  return { text, steps };
+  return result;
 }

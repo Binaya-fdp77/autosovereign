@@ -1,6 +1,6 @@
-﻿datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -35,90 +35,90 @@ enum EscrowStatus {
 }
 
 model User {
-  id               String     @id @default(uuid())
-  email            String     @unique
-  name             String
-  paypalEmail      String     @unique
-  role             String     // BUYER | FREELANCER | AGENT
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  id              String     @id @default(uuid())
+  email           String     @unique
+  name            String
+  paypalEmail     String     @unique
+  role            String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  buyerContracts   Contract[] @relation("BuyerContracts")
-  sellerContracts  Contract[] @relation("SellerContracts")
+  buyerContracts  Contract[] @relation("BuyerContracts")
+  sellerContracts Contract[] @relation("SellerContracts")
 }
 
 model Contract {
-  id             String          @id @default(uuid())
-  title          String
-  description    String
-  totalAmount    Decimal         @db.Decimal(12, 2)
-  currency       String          @default("USD")
-  status         ContractStatus  @default(DRAFT)
-  buyerId        String
-  sellerId       String
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id          String          @id @default(uuid())
+  title       String
+  description String
+  totalAmount Decimal         @db.Decimal(12, 2)
+  currency    String          @default("USD")
+  status      ContractStatus  @default(DRAFT)
+  buyerId     String
+  sellerId    String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  buyer          User            @relation("BuyerContracts", fields: [buyerId], references: [id], onDelete: Restrict)
-  seller         User            @relation("SellerContracts", fields: [sellerId], references: [id], onDelete: Restrict)
-  milestones     Milestone[]
-  escrowState    EscrowState?
-  agentLogs      AgentLog[]
-  idempotency    IdempotencyKey[]
+  buyer       User            @relation("BuyerContracts", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller      User            @relation("SellerContracts", fields: [sellerId], references: [id], onDelete: Restrict)
+  milestones  Milestone[]
+  escrowState EscrowState?
+  agentLogs   AgentLog[]
+  idempotency IdempotencyKey[]
 
   @@index([buyerId])
   @@index([sellerId])
 }
 
 model Milestone {
-  id           String          @id @default(uuid())
-  contractId   String
-  title        String
-  deliverable  String
-  amount       Decimal         @db.Decimal(12, 2)
-  status       MilestoneStatus @default(PENDING)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id          String          @id @default(uuid())
+  contractId  String
+  title       String
+  deliverable String
+  amount      Decimal         @db.Decimal(12, 2)
+  status      MilestoneStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  contract     Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract    Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
 
 model EscrowState {
-  id              String       @id @default(uuid())
-  contractId      String       @unique
-  paypalOrderId   String       @unique
-  captureId       String?      @unique
-  status          EscrowStatus @default(CREATED)
-  amountCaptured  Decimal      @default(0.00) @db.Decimal(12, 2)
-  feeAmount       Decimal      @default(0.00) @db.Decimal(12, 2)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id             String       @id @default(uuid())
+  contractId     String       @unique
+  paypalOrderId  String       @unique
+  captureId      String?      @unique
+  status         EscrowStatus @default(CREATED)
+  amountCaptured Decimal      @default(0.00) @db.Decimal(12, 2)
+  feeAmount      Decimal      @default(0.00) @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  contract        Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract       Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
 
 model AgentLog {
-  id          String   @id @default(uuid())
-  contractId  String
-  agentRole   String   // BUYER_AGENT | SELLER_AGENT | AUDITOR_AGENT
-  action      String
-  promptTokens Int     @default(0)
-  completionTokens Int @default(0)
-  payload     Json
-  createdAt   DateTime @default(now())
+  id               String   @id @default(uuid())
+  contractId       String
+  agentRole        String
+  action           String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  payload          Json
+  createdAt        DateTime @default(now())
 
-  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract         Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
 
 model IdempotencyKey {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  contractId  String
-  response    Json
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
+  id         String   @id @default(uuid())
+  key        String   @unique
+  contractId String
+  response   Json
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
 
-  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@index([key])
 }
