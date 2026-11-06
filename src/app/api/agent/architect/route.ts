@@ -1,95 +1,56 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
-import { generateObject } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { z } from 'zod';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { prompt, buyerEmail, sellerEmail, totalAmount } = body;
-
-    if (!prompt) {
-      return NextResponse.json({ error: 'Project prompt is required' }, { status: 400 });
-    }
-
+    const { prompt, budget, clientId, contractorId } = await request.json();
     const db = prisma as any;
-    const budget = Number(totalAmount || 1000);
-    const bEmail = buyerEmail || 'buyer@autosovereign.test';
-    const sEmail = sellerEmail || 'seller@autosovereign.test';
 
-    let structuredMilestones = [
-      { title: 'System Architecture & Database Schema', amount: budget * 0.3, deliverable: 'Prisma schema and ER diagram commit' },
-      { title: 'Core API & Authentication', amount: budget * 0.4, deliverable: 'Next.js auth and API route tests passing' },
-      { title: 'Frontend UI & Final Integration', amount: budget * 0.3, deliverable: 'Production build passing and deployment hash' },
-    ];
+    // Get default client/contractor if missing
+    let clientUser = clientId ? await db.user.findUnique({ where: { id: clientId } }) : null;
+    if (!clientUser) clientUser = await db.user.findFirst({ where: { role: 'CLIENT' } });
+    if (!clientUser) clientUser = await db.user.findFirst();
 
-    let agentReasoning = "Parsed project prompt and generated modular milestones via heuristic analysis.";
+    let contractorUser = contractorId ? await db.user.findUnique({ where: { id: contractorId } }) : null;
+    if (!contractorUser) contractorUser = await db.user.findFirst({ where: { role: 'CONTRACTOR' } });
+    if (!contractorUser) contractorUser = clientUser;
 
-    if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('placeholder')) {
-      const result = await generateObject({
-        model: openai('gpt-4o'),
-        schema: z.object({
-          contractTitle: z.string(),
-          milestones: z.array(z.object({
-            title: z.string(),
-            amount: z.number(),
-            deliverable: z.string(),
-          })),
-        }),
-        prompt: `You are AutoSovereign's Autonomous Escrow Architect. Break down this project description into 3 to 4 sequential milestones totaling exactly $${budget}: "${prompt}"`,
-      });
-      structuredMilestones = result.object.milestones;
-      agentReasoning = `Successfully orchestrated contract structure for "${result.object.contractTitle}".`;
-    }
-
+    // Create Contract with valid ContractStatus enum value
     const contract = await db.contract.create({
       data: {
-        title: prompt.substring(0, 50) + '...',
+        title: prompt.slice(0, 40) || 'AI Managed Escrow Contract',
         description: prompt,
-        totalAmount: budget,
+        amount: parseFloat(budget) || 1000.0,
         currency: 'USD',
-        buyer: {
-          connectOrCreate: {
-            where: { email: bEmail },
-            create: { email: bEmail, name: 'Autonomous Buyer', paypalEmail: bEmail, role: 'BUYER' },
-          },
-        },
-        seller: {
-          connectOrCreate: {
-            where: { email: sEmail },
-            create: { email: sEmail, name: 'Autonomous Seller', paypalEmail: sEmail, role: 'SELLER' },
-          },
-        },
-        milestones: {
-          create: structuredMilestones.map((m: any) => ({
-            title: m.title,
-            amount: m.amount,
-            deliverable: m.deliverable,
-            status: 'PENDING',
-          })),
-        },
+        status: 'LOCKED_IN_ESCROW', // Valid enum value
+        clientId: clientUser.id,
+        contractorId: contractorUser.id,
       },
-      include: { milestones: true },
     });
 
+    // Create Initial Milestone
+    const milestone = await db.milestone.create({
+      data: {
+        title: 'Core Deliverables Implementation',
+        description: 'Complete baseline architecture and integration requirements.',
+        amount: parseFloat(budget) || 1000.0,
+        status: 'PENDING',
+        contractId: contract.id,
+      },
+    });
+
+    // Log telemetry
     await db.agentLog.create({
       data: {
-        contractId: contract.id,
-        agentRole: 'AI_ESCROW_ARCHITECT',
-        action: 'Architected Contract & Milestones',
-        payload: JSON.stringify({
-          reasoning: agentReasoning,
-          milestoneCount: structuredMilestones.length,
-          totalBudget: budget,
-          timestamp: new Date().toISOString(),
-        }),
+        agentRole: 'ARCHITECT',
+        action: 'CREATE_CONTRACT',
+        payload: JSON.stringify({ contractId: contract.id, milestoneId: milestone.id, budget }),
+        contract: { connect: { id: contract.id } },
       },
     });
 
-    return NextResponse.json({ success: true, contract });
+    return NextResponse.json({ success: true, contract, milestone });
   } catch (error: any) {
-    console.error('Architect error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

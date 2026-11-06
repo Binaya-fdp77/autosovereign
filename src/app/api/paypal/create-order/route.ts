@@ -1,38 +1,51 @@
 import { NextResponse } from 'next/server';
-import { paypalClient } from '@/lib/paypal/client';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { amount, currency, contractId } = body;
+    const { amount, currency = 'USD' } = await request.json();
 
-    if (!amount || !contractId) {
-      return NextResponse.json({ error: 'Amount and contractId are required' }, { status: 400 });
-    }
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const authUrl = `${process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com'}/v1/oauth2/token`;
+    const ordersUrl = `${process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com'}/v2/checkout/orders`;
 
-    const order = await paypalClient.request('/v2/checkout/orders', {
+    // 1. Authenticate to get a temporary Access Token
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenRes = await fetch(authUrl, {
       method: 'POST',
-      body: {
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    });
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    // 2. Make the REST API call to create an escrow order
+    const orderRes = await fetch(ordersUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         intent: 'CAPTURE',
         purchase_units: [
           {
-            reference_id: contractId,
-            description: `AutoSovereign Escrow for Contract ${contractId}`,
-            custom_id: contractId,
-            amount: { currency_code: currency || 'USD', value: amount },
+            amount: {
+              currency_code: currency,
+              value: amount.toFixed(2),
+            },
           },
         ],
-        application_context: {
-          return_url: `${request.headers.get('origin') || 'http://localhost:3000'}/dashboard?success=true`,
-          cancel_url: `${request.headers.get('origin') || 'http://localhost:3000'}/dashboard?cancel=true`,
-          user_action: 'PAY_NOW',
-        },
-      },
+      }),
     });
 
-    return NextResponse.json(order);
+    const orderData = await orderRes.json();
+    return NextResponse.json({ success: true, order: orderData });
   } catch (error: any) {
-    console.error('Create order error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
