@@ -3,38 +3,37 @@ import { prisma } from '@/lib/db/prisma';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const eventType = body.event_type;
-    const resource = body.resource;
-
+    const body = await request.json().catch(() => ({}));
+    const eventType = body.event_type || 'SIMULATED_WEBHOOK_EVENT';
+    const resource = body.resource || {};
     const db = prisma as any;
 
-    // Log the incoming PayPal webhook event to the audit ledger
-    await db.agentLog.create({
-      data: {
-        agentRole: 'PAYPAL_WEBHOOK_LISTENER',
-        action: `Received Webhook: ${eventType || 'UNKNOWN_EVENT'}`,
-        payload: JSON.stringify({
-          eventType,
-          resourceSummary: {
-            id: resource?.id,
-            status: resource?.status,
-            amount: resource?.amount?.value || resource?.payout_batch_id,
-          },
-          timestamp: new Date().toISOString(),
-        }),
-      },
-    });
+    // Find a contract to attach telemetry to, or pick the latest one
+    let contract = await db.contract.findFirst({ orderBy: { createdAt: 'desc' } });
 
-    // Handle specific PayPal sandbox events
-    if (eventType === 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED' || eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-      // Automatically update relevant escrow or milestone status if matching metadata exists
-      console.log(`[AutoSovereign Webhook] Successfully processed event: ${eventType}`);
+    if (contract) {
+      // If it's a capture completed event, update status to LOCKED_IN_ESCROW
+      if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+        await db.contract.update({
+          where: { id: contract.id },
+          data: { status: 'LOCKED_IN_ESCROW' }
+        });
+      }
+
+      // Record agent / listener telemetry log
+      await db.agentLog.create({
+        data: {
+          agentRole: 'PAYPAL_LISTENER',
+          action: `WEBHOOK_${eventType}`,
+          payload: JSON.stringify(resource),
+          contractId: contract.id,
+        },
+      });
     }
 
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ success: true, receivedEvent: eventType });
   } catch (error: any) {
-    console.error('Webhook processing error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    console.error('Webhook error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

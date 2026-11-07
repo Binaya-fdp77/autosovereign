@@ -3,54 +3,58 @@ import { prisma } from '@/lib/db/prisma';
 
 export async function POST(request: Request) {
   try {
-    const { prompt, budget, clientId, contractorId } = await request.json();
+    const body = await request.json();
+    const { prompt, budget } = body;
     const db = prisma as any;
 
-    // Get default client/contractor if missing
-    let clientUser = clientId ? await db.user.findUnique({ where: { id: clientId } }) : null;
-    if (!clientUser) clientUser = await db.user.findFirst({ where: { role: 'CLIENT' } });
-    if (!clientUser) clientUser = await db.user.findFirst();
+    if (!prompt) {
+      return NextResponse.json({ success: false, error: 'Project description prompt is required.' }, { status: 400 });
+    }
 
-    let contractorUser = contractorId ? await db.user.findUnique({ where: { id: contractorId } }) : null;
-    if (!contractorUser) contractorUser = await db.user.findFirst({ where: { role: 'CONTRACTOR' } });
-    if (!contractorUser) contractorUser = clientUser;
+    // Fetch default buyer and seller for automatic assignment
+    let buyer = await db.user.findFirst({ where: { role: 'BUYER' } });
+    let seller = await db.user.findFirst({ where: { role: 'CONTRACTOR' } });
 
-    // Create Contract with valid ContractStatus enum value
+    if (!buyer || !seller) {
+      buyer = await db.user.create({ data: { name: 'Alice Buyer', email: 'buyer@autosovereign.test', paypalEmail: 'buyer-paypal@autosovereign.test', role: 'BUYER' } });
+      seller = await db.user.create({ data: { name: 'Bob Seller', email: 'seller@autosovereign.test', paypalEmail: 'seller-paypal@autosovereign.test', role: 'CONTRACTOR' } });
+    }
+
+    const totalAmount = budget ? parseFloat(budget) : 1000.0;
+
+    // Create Contract with LOCKED_IN_ESCROW status automatically
     const contract = await db.contract.create({
       data: {
-        title: prompt.slice(0, 40) || 'AI Managed Escrow Contract',
+        title: prompt.length > 40 ? prompt.slice(0, 37) + '...' : prompt,
         description: prompt,
-        amount: parseFloat(budget) || 1000.0,
+        totalAmount,
         currency: 'USD',
-        status: 'LOCKED_IN_ESCROW', // Valid enum value
-        clientId: clientUser.id,
-        contractorId: contractorUser.id,
+        status: 'LOCKED_IN_ESCROW',
+        buyerId: buyer.id,
+        sellerId: seller.id,
+        milestones: {
+          create: [
+            { title: 'Milestone 1: Core Architecture & Setup', amount: totalAmount * 0.5, deliverable: 'Repository setup and initial schemas', status: 'PENDING' },
+            { title: 'Milestone 2: Final Delivery & Verification', amount: totalAmount * 0.5, deliverable: 'Fully tested application build', status: 'PENDING' }
+          ]
+        }
       },
+      include: { milestones: true }
     });
 
-    // Create Initial Milestone
-    const milestone = await db.milestone.create({
+    // Record Swarm Telemetry Log
+    await db.agentLog.create({
       data: {
-        title: 'Core Deliverables Implementation',
-        description: 'Complete baseline architecture and integration requirements.',
-        amount: parseFloat(budget) || 1000.0,
-        status: 'PENDING',
+        agentRole: 'AI_ESCROW_ARCHITECT',
+        action: 'AUTO_ARCHITECT_AND_LOCK_ESCROW',
+        payload: JSON.stringify({ contractId: contract.id, totalAmount, status: 'LOCKED_IN_ESCROW' }),
         contractId: contract.id,
       },
     });
 
-    // Log telemetry
-    await db.agentLog.create({
-      data: {
-        agentRole: 'ARCHITECT',
-        action: 'CREATE_CONTRACT',
-        payload: JSON.stringify({ contractId: contract.id, milestoneId: milestone.id, budget }),
-        contract: { connect: { id: contract.id } },
-      },
-    });
-
-    return NextResponse.json({ success: true, contract, milestone });
+    return NextResponse.json({ success: true, contract });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Architect error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

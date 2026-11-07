@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 
+export async function GET() {
+  try {
+    const db = prisma as any;
+    const users = await db.user.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    return NextResponse.json({ success: true, users });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { name, email, paypalEmail, role } = await request.json();
@@ -10,7 +22,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Name and Email are required.' }, { status: 400 });
     }
 
-    // Ensure paypalEmail is never an empty string to satisfy UNIQUE constraint
     const finalPaypalEmail = paypalEmail && paypalEmail.trim() !== '' 
       ? paypalEmail.trim() 
       : `paypal-${Date.now()}-${Math.floor(Math.random() * 1000)}@autosovereign.test`;
