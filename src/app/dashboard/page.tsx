@@ -4,6 +4,10 @@ import UserManagementCard from '@/components/UserManagementCard';
 import DisputeArenaCard from '@/components/DisputeArenaCard';
 import CodeAuditorCard from '@/components/CodeAuditorCard';
 import FinancialFlowchart from '@/components/FinancialFlowchart';
+import PayoutWaterfallHistoryCard from '@/components/PayoutWaterfallHistoryCard';
+import SettlementCertificateCard from '@/components/SettlementCertificateCard';
+import AgentPipelineVisualizer from '@/components/AgentPipelineVisualizer';
+import AgentMetricsMonitor from '@/components/AgentMetricsMonitor';
 
 export default function Dashboard() {
   const [contracts, setContracts] = useState<any[]>([]);
@@ -12,6 +16,7 @@ export default function Dashboard() {
   const [prompt, setPrompt] = useState('');
   const [budget, setBudget] = useState('1000');
   const [logs, setLogs] = useState<any[]>([]);
+  const [telemetryFilter, setTelemetryFilter] = useState('ALL');
 
   const fetchContracts = async () => {
     try {
@@ -118,21 +123,25 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      <header className="mb-8 border-b border-slate-800 pb-4">
+      <header className="mb-4 border-b border-slate-800 pb-4">
         <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
           AutoSovereign Control Center
         </h1>
         <p className="text-slate-400 text-sm mt-1">Autonomous AI Escrow & Contingency Platform</p>
       </header>
 
+      {/* Live Agent Latency & Performance Monitor Bar */}
+      <AgentMetricsMonitor />
+
+      {/* Autonomous Agent Pipeline Visualizer */}
+      <AgentPipelineVisualizer />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Widget 1: User Directory */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <h2 className="text-lg font-semibold mb-4 text-blue-400">Enterprise User Directory</h2>
           <UserManagementCard />
         </div>
 
-        {/* Widget 2: AI Escrow Architect */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <h2 className="text-lg font-semibold mb-2 text-indigo-400">AI Escrow Architect</h2>
           <p className="text-xs text-slate-400 mb-4">
@@ -182,6 +191,16 @@ export default function Dashboard() {
         <DisputeArenaCard contracts={contracts} onDisputeResolved={() => { fetchContracts(); fetchLogs(); }} />
       </div>
 
+      {/* Cryptographic Settlement Certificate Card */}
+      <div className="mt-6">
+        <SettlementCertificateCard contracts={contracts} onCertificateGenerated={() => { fetchContracts(); fetchLogs(); }} />
+      </div>
+
+      {/* Payout Waterfall History Table */}
+      <div className="mt-6">
+        <PayoutWaterfallHistoryCard logs={logs} />
+      </div>
+
       {/* Active Contracts & Escrows Display */}
       <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
         <h2 className="text-lg font-semibold mb-4 text-emerald-400">Active Escrow Contracts</h2>
@@ -221,19 +240,47 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Widget 8: AI Swarm Telemetry Stream */}
+      {/* AI Swarm Telemetry Stream */}
       <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-        <h2 className="text-lg font-semibold mb-4 text-purple-400">AI Swarm Telemetry Stream</h2>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-purple-400">AI Swarm Telemetry Stream</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Live event stream across all autonomous agent roles.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={telemetryFilter}
+              onChange={(e) => setTelemetryFilter(e.target.value)}
+              className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+            >
+              <option value="ALL">All Agents</option>
+              <option value="AI_ESCROW_ARCHITECT">Architect</option>
+              <option value="AI_CODE_AUDITOR">Auditor</option>
+              <option value="AI_DISPUTE_MEDIATOR">Mediator</option>
+              <option value="PAYPAL_PAYOUT_WATERFALL">Waterfall</option>
+              <option value="SETTLEMENT_CERTIFICATE_ISSUER">Cert Issuer</option>
+            </select>
+            <button
+              onClick={() => setLogs([])}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition-colors border border-slate-700 font-medium"
+            >
+              Clear Stream
+            </button>
+          </div>
+        </div>
+
         <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs space-y-2">
-          {logs.length === 0 ? (
-            <p className="text-slate-600 italic">Listening for agent telemetry events...</p>
+          {logs.filter(log => telemetryFilter === 'ALL' || log.agentRole === telemetryFilter).length === 0 ? (
+            <p className="text-slate-600 italic">No telemetry events found for the selected filter...</p>
           ) : (
-            logs.map((log, idx) => (
-              <div key={idx} className="border-b border-slate-900 pb-1 flex justify-between">
-                <span className="text-cyan-400">[{log.agentRole}] {log.action}</span>
-                <span className="text-slate-500">{new Date(log.createdAt).toLocaleTimeString()}</span>
-              </div>
-            ))
+            logs
+              .filter(log => telemetryFilter === 'ALL' || log.agentRole === telemetryFilter)
+              .map((log, idx) => (
+                <div key={idx} className="border-b border-slate-900 pb-1 flex justify-between items-center">
+                  <span className="text-cyan-400">[{log.agentRole}] {log.action}</span>
+                  <span className="text-slate-500">{new Date(log.createdAt).toLocaleTimeString()}</span>
+                </div>
+              ))
           )}
         </div>
       </div>
