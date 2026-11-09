@@ -53,5 +53,5 @@ Follow these steps to run AutoSovereign locally for evaluation:
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/Binaya77/autosovereign.git](https://github.com/your-username/autosovereign.git)
+git clone [https://github.com/Binaya-fdp77/autosovereign.git](https://github.com/your-username/autosovereign.git)
 cd autosovereign
