@@ -1,39 +1,57 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+﻿import { NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+import { sseHub } from "@/lib/events/sse-hub";
 
-export async function POST(request: Request) {
+const prisma = new PrismaClient();
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const eventType = body.event_type || 'SIMULATED_WEBHOOK_EVENT';
-    const resource = body.resource || {};
-    const db = prisma as any;
+    const event = await req.json();
+    const eventType = event.event_type;
+    const resource = event.resource;
 
-    // Find a contract to attach telemetry to, or pick the latest one
-    let contract = await db.contract.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (eventType === "CHECKOUT.ORDER.APPROVED" || eventType === "PAYMENT.CAPTURE.COMPLETED") {
+      const paypalOrderId = resource.id || resource.supplementary_data?.related_ids?.order_id;
 
-    if (contract) {
-      // If it's a capture completed event, update status to LOCKED_IN_ESCROW
-      if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-        await db.contract.update({
-          where: { id: contract.id },
-          data: { status: 'LOCKED_IN_ESCROW' }
+      if (paypalOrderId) {
+        const escrow = await prisma.escrowState.findUnique({
+          where: { paypalOrderId },
+          include: { contract: true },
         });
-      }
 
-      // Record agent / listener telemetry log
-      await db.agentLog.create({
-        data: {
-          agentRole: 'PAYPAL_LISTENER',
-          action: `WEBHOOK_${eventType}`,
-          payload: JSON.stringify(resource),
-          contractId: contract.id,
-        },
-      });
+        if (escrow) {
+          const updatedEscrow = await prisma.escrowState.update({
+            where: { id: escrow.id },
+            data: {
+              status: "COMPLETED",
+              paypalCaptureId: resource.purchase_units?.[0]?.payments?.captures?.[0]?.id || resource.id,
+            },
+          });
+
+          await prisma.contract.update({
+            where: { id: escrow.contractId },
+            data: { status: "IN_PROGRESS" },
+          });
+
+          await prisma.milestone.updateMany({
+            where: { contractId: escrow.contractId },
+            data: { status: "FUNDED" },
+          });
+
+          // Broadcast real-time update to all connected dashboard clients
+          sseHub.broadcast("escrow-updated", {
+            contractId: escrow.contractId,
+            status: "IN_PROGRESS",
+            escrowStatus: "COMPLETED",
+            paypalOrderId,
+            amountLocked: escrow.amountLocked,
+          });
+        }
+      }
     }
 
-    return NextResponse.json({ success: true, receivedEvent: eventType });
+    return NextResponse.json({ received: true }, { status: 200 });
   } catch (error: any) {
-    console.error('Webhook error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

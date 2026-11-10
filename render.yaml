@@ -1,0 +1,36 @@
+﻿services:
+  - type: web
+    name: autosovereign-web
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autosovereign-db
+          property: connectionString
+      - key: PAYPAL_ENVIRONMENT
+        value: sandbox
+      - key: NODE_ENV
+        value: production
+
+  - type: worker
+    name: autosovereign-agent-worker
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx ts-node src/workers/agent-executor.ts
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autosovereign-db
+          property: connectionString
+
+databases:
+  - name: autosovereign-db
+    databaseName: autosovereign
+    user: postgres
+    plan: starter

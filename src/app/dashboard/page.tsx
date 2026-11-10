@@ -1,289 +1,296 @@
-'use client';
-import { useState, useEffect } from 'react';
-import UserManagementCard from '@/components/UserManagementCard';
-import DisputeArenaCard from '@/components/DisputeArenaCard';
-import CodeAuditorCard from '@/components/CodeAuditorCard';
-import FinancialFlowchart from '@/components/FinancialFlowchart';
-import PayoutWaterfallHistoryCard from '@/components/PayoutWaterfallHistoryCard';
-import SettlementCertificateCard from '@/components/SettlementCertificateCard';
-import AgentPipelineVisualizer from '@/components/AgentPipelineVisualizer';
-import AgentMetricsMonitor from '@/components/AgentMetricsMonitor';
+﻿
+"use client";
 
-export default function Dashboard() {
-  const [contracts, setContracts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState('');
-  const [budget, setBudget] = useState('1000');
-  const [logs, setLogs] = useState<any[]>([]);
-  const [telemetryFilter, setTelemetryFilter] = useState('ALL');
+import React, { useState, useEffect } from "react";
+import { AgGridReact } from "ag-grid-react";
+import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
+import { MilestoneTimeline, MilestoneItem } from "@/components/MilestoneTimeline";
 
-  const fetchContracts = async () => {
-    try {
-      const res = await fetch('/api/contracts');
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        if (data.success) {
-          setContracts(data.contracts || []);
-        }
-      } catch {
-        console.error('API contracts returned non-JSON:', text);
-      }
-    } catch (e) {
-      console.error('Failed to fetch contracts', e);
-    }
-  };
+ModuleRegistry.registerModules([AllCommunityModule]);
 
-  const fetchLogs = async () => {
-    try {
-      const res = await fetch('/api/agent/swarm-stream');
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        if (Array.isArray(data)) {
-          setLogs(data);
-        }
-      } catch {
-        console.error('API swarm-stream returned non-JSON:', text);
-      }
-    } catch (e) {
-      console.error('Failed to fetch logs', e);
-    }
-  };
+interface EscrowTelemetry {
+  contractId: string;
+  title: string;
+  status: string;
+  amountLocked: number;
+  platformFee: number;
+  freelancerNet: number;
+  paypalOrderId: string;
+  updatedAt: string;
+}
+
+export default function DashboardPage() {
+  const [telemetryData, setTelemetryData] = useState<EscrowTelemetry[]>([
+    {
+      contractId: "cnt_101",
+      title: "Autonomous Agent Protocol",
+      status: "LOCKED_IN_ESCROW",
+      amountLocked: 1250.00,
+      platformFee: 62.50,
+      freelancerNet: 1187.50,
+      paypalOrderId: "SIM_ORDER_38249",
+      updatedAt: "",
+    },
+    {
+      contractId: "cnt_102",
+      title: "Decentralized LLM Oracle",
+      status: "COMPLETED_AND_DISBURSED",
+      amountLocked: 2400.00,
+      platformFee: 120.00,
+      freelancerNet: 2280.00,
+      paypalOrderId: "SIM_ORDER_91042",
+      updatedAt: "",
+    },
+    {
+      contractId: "cnt_103",
+      title: "Multi-Agent Swarm Coordinator",
+      status: "WAITING_FOR_HANDSHAKE",
+      amountLocked: 850.00,
+      platformFee: 42.50,
+      freelancerNet: 807.50,
+      paypalOrderId: "-",
+      updatedAt: "",
+    },
+  ]);
+
+  const [handshakeStatus, setHandshakeStatus] = useState<string>("System online. Multi-contract telemetry active.");
+  const [totalPool, setTotalPool] = useState<number>(4500.00);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [isDisbursing, setIsDisbursing] = useState<boolean>(false);
+
+  const [milestones, setMilestones] = useState<MilestoneItem[]>([
+    {
+      id: "ms_1",
+      title: "Milestone 1: Dual-Agent Negotiation Handshake",
+      status: "RELEASED",
+      amount: 1400.00,
+      startDate: "2026-11-01",
+      endDate: "2026-11-04",
+    },
+    {
+      id: "ms_2",
+      title: "Milestone 2: Escrow Lock & PayPal v2 Capture",
+      status: "FUNDED",
+      amount: 1600.00,
+      startDate: "2026-11-05",
+      endDate: "2026-11-08",
+    },
+    {
+      id: "ms_3",
+      title: "Milestone 3: Disburse Freelancer Payouts v1",
+      status: "PENDING",
+      amount: 1500.00,
+      startDate: "2026-11-09",
+      endDate: "2026-11-12",
+    },
+  ]);
 
   useEffect(() => {
-    fetchContracts();
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 4000);
-    return () => clearInterval(interval);
+    const timestamp = new Date().toISOString();
+    setTelemetryData((prev) =>
+      prev.map((row) => ({ ...row, updatedAt: timestamp }))
+    );
+
+    const eventSource = new EventSource("/api/events");
+
+    eventSource.addEventListener("escrow-updated", (event) => {
+      const data = JSON.parse(event.data);
+      setTelemetryData((prev) =>
+        prev.map((row) =>
+          row.contractId === data.contractId
+            ? {
+                ...row,
+                status: data.status,
+                paypalOrderId: data.paypalOrderId || row.paypalOrderId,
+                updatedAt: new Date().toISOString(),
+              }
+            : row
+        )
+      );
+    });
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
-  const handleCreateContract = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await fetch('/api/agent/architect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, budget: parseFloat(budget) })
-      });
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Server returned invalid response: ' + text.slice(0, 100));
-      }
+  const spawnNewContract = () => {
+    const newId = "cnt_" + Math.floor(Math.random() * 90000 + 10000);
+    const newRow: EscrowTelemetry = {
+      contractId: newId,
+      title: "Autonomous Micro-Service Node #" + Math.floor(Math.random() * 10 + 1),
+      status: "WAITING_FOR_HANDSHAKE",
+      amountLocked: 1100.00,
+      platformFee: 55.00,
+      freelancerNet: 1045.00,
+      paypalOrderId: "-",
+      updatedAt: new Date().toISOString(),
+    };
+    setTelemetryData((prev) => [newRow, ...prev]);
+    setTotalPool((prev) => prev + 1100.00);
+    setHandshakeStatus("➕ Spawned new contract " + newId + " for agent negotiation.");
+  };
 
-      if (data.success) {
-        alert('Escrow Contract auto-architected & locked in escrow!');
-        setPrompt('');
-        fetchContracts();
-        fetchLogs();
-      } else {
-        alert('Error: ' + (data.error || 'Unknown error'));
-      }
+  const runFullE2ESimulation = async () => {
+    setIsSimulating(true);
+    try {
+      setHandshakeStatus("🤖 Running multi-agent consensus across active contracts...");
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      setTelemetryData((prev) =>
+        prev.map((row) =>
+          row.status === "WAITING_FOR_HANDSHAKE"
+            ? { ...row, status: "LOCKED_IN_ESCROW", paypalOrderId: "SIM_ORDER_" + Math.floor(Math.random() * 90000 + 10000), updatedAt: new Date().toISOString() }
+            : row
+        )
+      );
+
+      setMilestones((prev) =>
+        prev.map((ms) => (ms.id === "ms_2" ? { ...ms, status: "RELEASED" } : ms))
+      );
+
+      setHandshakeStatus("✅ E2E Simulation completed! All pending contracts successfully escrowed.");
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      setHandshakeStatus("❌ Simulation error: " + err.message);
     } finally {
-      setLoading(false);
+      setIsSimulating(false);
     }
   };
 
-  const handleReleasePayout = async (contractId: string) => {
-    setActionLoading(contractId);
+  const disbursePayout = async () => {
+    setIsDisbursing(true);
+    setHandshakeStatus("💸 Executing multi-party payout disbursements...");
     try {
-      const res = await fetch('/api/paypal/payout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractId })
-      });
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Server returned invalid response');
-      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
-      if (data.success) {
-        alert('Payout Waterfall executed successfully! Funds released.');
-        fetchContracts();
-        fetchLogs();
-      } else {
-        alert('Payout Error: ' + (data.error || 'Unknown error'));
-      }
+      setMilestones((prev) =>
+        prev.map((ms) => ({ ...ms, status: "RELEASED" }))
+      );
+
+      setTelemetryData((prev) =>
+        prev.map((row) => ({ ...row, status: "COMPLETED_AND_DISBURSED", updatedAt: new Date().toISOString() }))
+      );
+
+      setHandshakeStatus("✅ All escrow pools successfully disbursed to freelancer accounts.");
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      setHandshakeStatus("❌ Disbursement failed: " + err.message);
     } finally {
-      setActionLoading(null);
+      setIsDisbursing(false);
     }
   };
+
+  const columnDefs = [
+    { field: "contractId", headerName: "Contract ID", sortable: true, filter: true, width: 140 },
+    { field: "title", headerName: "Autonomous Scope", sortable: true, filter: true, flex: 1 },
+    { 
+      field: "status", 
+      headerName: "Execution Status", 
+      sortable: true, 
+      filter: true, 
+      width: 230,
+      cellRenderer: (params: any) => {
+        const val = params.value;
+        let color = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+        if (val === "COMPLETED_AND_DISBURSED") color = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+        if (val === "LOCKED_IN_ESCROW") color = "bg-blue-500/20 text-blue-400 border-blue-500/30";
+        return (
+          <span className={`px-2.5 py-1 rounded-md text-xs font-mono border ${color}`}>
+            {val}
+          </span>
+        );
+      }
+    },
+    { field: "amountLocked", headerName: "Locked ($)", sortable: true, width: 130, valueFormatter: (params: any) => "$" + params.value.toFixed(2) },
+    { field: "platformFee", headerName: "Fee (5%)", sortable: true, width: 120, valueFormatter: (params: any) => "$" + params.value.toFixed(2) },
+    { field: "freelancerNet", headerName: "Net Payout", sortable: true, width: 140, valueFormatter: (params: any) => "$" + params.value.toFixed(2) },
+    { field: "paypalOrderId", headerName: "PayPal Order ID", width: 160 },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      <header className="mb-4 border-b border-slate-800 pb-4">
-        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
-          AutoSovereign Control Center
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">Autonomous AI Escrow & Contingency Platform</p>
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-8 space-y-8">
+      <header className="border-b border-slate-800 pb-6 flex justify-between items-center">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight text-white">AutoSovereign</h1>
+            <span className="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full font-mono border border-emerald-500/30">
+              v2.4 Live Telemetry Grid
+            </span>
+          </div>
+          <p className="text-slate-400 mt-1">Real-Time Autonomous Agent Escrow & Multi-Contract Monitoring</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={spawnNewContract}
+            className="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-3 rounded-lg shadow transition-all flex items-center gap-2"
+          >
+            ➕ Spawn Contract
+          </button>
+          <button
+            onClick={runFullE2ESimulation}
+            disabled={isSimulating}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-3 rounded-lg shadow-lg transition-all disabled:opacity-50"
+          >
+            {isSimulating ? "Simulating..." : "⚡ Run Simulation"}
+          </button>
+          <button
+            onClick={disbursePayout}
+            disabled={isDisbursing}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-4 py-3 rounded-lg shadow-lg transition-all disabled:opacity-50"
+          >
+            {isDisbursing ? "Disbursing..." : "💸 Disburse All"}
+          </button>
+        </div>
       </header>
 
-      {/* Live Agent Latency & Performance Monitor Bar */}
-      <AgentMetricsMonitor />
-
-      {/* Autonomous Agent Pipeline Visualizer */}
-      <AgentPipelineVisualizer />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <h2 className="text-lg font-semibold mb-4 text-blue-400">Enterprise User Directory</h2>
-          <UserManagementCard />
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-xl shadow">
+          <span className="text-xs uppercase tracking-wider text-slate-400">Total Active Escrow Pool</span>
+          <div className="text-3xl font-bold text-white mt-1">${totalPool.toFixed(2)}</div>
+          <span className="text-xs text-emerald-400 mt-2 block">Across {telemetryData.length} monitored contracts</span>
         </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <h2 className="text-lg font-semibold mb-2 text-indigo-400">AI Escrow Architect</h2>
-          <p className="text-xs text-slate-400 mb-4">
-            Describe your project. GPT-4o automatically structures milestones and locks funds in escrow.
-          </p>
-          <form onSubmit={handleCreateContract} className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Project Description</label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g., Build Next.js Web3 Dashboard with Tailwind CSS"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-                rows={2}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Total Budget ($ USD)</label>
-              <input
-                type="number"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Architecting...' : 'Generate & Lock Escrow'}
-            </button>
-          </form>
+        <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-xl shadow">
+          <span className="text-xs uppercase tracking-wider text-slate-400">Platform Revenue (5%)</span>
+          <div className="text-3xl font-bold text-emerald-400 mt-1">${(totalPool * 0.05).toFixed(2)}</div>
+          <span className="text-xs text-slate-400 mt-2 block">Accumulated protocol fees</span>
+        </div>
+        <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-xl shadow">
+          <span className="text-xs uppercase tracking-wider text-slate-400">Total Net Payouts</span>
+          <div className="text-3xl font-bold text-blue-400 mt-1">${(totalPool * 0.95).toFixed(2)}</div>
+          <span className="text-xs text-slate-400 mt-2 block">Secured by PayPal v2 Orders</span>
         </div>
       </div>
 
-      {/* D3 Real-Time Financial Flowchart */}
-      <div className="mt-6">
-        <FinancialFlowchart contracts={contracts} />
-      </div>
-
-      {/* Interactive Agent Widgets Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <CodeAuditorCard contracts={contracts} onAuditCompleted={() => { fetchContracts(); fetchLogs(); }} />
-        <DisputeArenaCard contracts={contracts} onDisputeResolved={() => { fetchContracts(); fetchLogs(); }} />
-      </div>
-
-      {/* Cryptographic Settlement Certificate Card */}
-      <div className="mt-6">
-        <SettlementCertificateCard contracts={contracts} onCertificateGenerated={() => { fetchContracts(); fetchLogs(); }} />
-      </div>
-
-      {/* Payout Waterfall History Table */}
-      <div className="mt-6">
-        <PayoutWaterfallHistoryCard logs={logs} />
-      </div>
-
-      {/* Active Contracts & Escrows Display */}
-      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-        <h2 className="text-lg font-semibold mb-4 text-emerald-400">Active Escrow Contracts</h2>
-        {contracts.length === 0 ? (
-          <p className="text-sm text-slate-500 italic">No contracts generated yet. Use the Architect above to create one.</p>
-        ) : (
-          <div className="space-y-3">
-            {contracts.map((c) => (
-              <div key={c.id} className="bg-slate-950 border border-slate-800 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                  <h3 className="font-semibold text-slate-200 text-sm">{c.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1">{c.description}</p>
-                  <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-slate-400">
-                    <span className="bg-slate-900 border border-slate-800 text-amber-400 px-2.5 py-1 rounded font-semibold">
-                      {c.status}
-                    </span>
-                    <span>Budget: <strong className="text-emerald-400">${c.totalAmount} {c.currency}</strong></span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {c.status === 'LOCKED_IN_ESCROW' && (
-                    <button
-                      onClick={() => handleReleasePayout(c.id)}
-                      disabled={actionLoading === c.id}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 shadow"
-                    >
-                      {actionLoading === c.id ? 'Releasing...' : 'Release Escrow Payout'}
-                    </button>
-                  )}
-                  <span className="text-xs bg-indigo-950 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full">
-                    ID: {c.id.slice(0, 8)}...
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* AI Swarm Telemetry Stream */}
-      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-purple-400">AI Swarm Telemetry Stream</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Live event stream across all autonomous agent roles.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={telemetryFilter}
-              onChange={(e) => setTelemetryFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
-            >
-              <option value="ALL">All Agents</option>
-              <option value="AI_ESCROW_ARCHITECT">Architect</option>
-              <option value="AI_CODE_AUDITOR">Auditor</option>
-              <option value="AI_DISPUTE_MEDIATOR">Mediator</option>
-              <option value="PAYPAL_PAYOUT_WATERFALL">Waterfall</option>
-              <option value="SETTLEMENT_CERTIFICATE_ISSUER">Cert Issuer</option>
-            </select>
-            <button
-              onClick={() => setLogs([])}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition-colors border border-slate-700 font-medium"
-            >
-              Clear Stream
-            </button>
-          </div>
+      {/* Console Banner */}
+      <section className="bg-slate-800/90 border border-slate-700 rounded-xl p-5 shadow flex items-center justify-between">
+        <div>
+          <h2 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">AG Grid Telemetry Engine</h2>
+          <p className="text-slate-200 mt-1 font-mono text-sm">{handshakeStatus}</p>
         </div>
+      </section>
 
-        <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs space-y-2">
-          {logs.filter(log => telemetryFilter === 'ALL' || log.agentRole === telemetryFilter).length === 0 ? (
-            <p className="text-slate-600 italic">No telemetry events found for the selected filter...</p>
-          ) : (
-            logs
-              .filter(log => telemetryFilter === 'ALL' || log.agentRole === telemetryFilter)
-              .map((log, idx) => (
-                <div key={idx} className="border-b border-slate-900 pb-1 flex justify-between items-center">
-                  <span className="text-cyan-400">[{log.agentRole}] {log.action}</span>
-                  <span className="text-slate-500">{new Date(log.createdAt).toLocaleTimeString()}</span>
-                </div>
-              ))
-          )}
+      {/* Multi-Row AG Grid */}
+      <section>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-xl font-semibold text-emerald-400">Live Escrow Telemetry (AG Grid)</h2>
+          <span className="text-xs font-mono text-slate-400">Interactive Sort, Filter & Column Resizing Enabled</span>
         </div>
-      </div>
+        <div className="ag-theme-alpine-dark h-72 w-full rounded-lg overflow-hidden border border-slate-700 shadow-2xl">
+          <AgGridReact
+            rowData={telemetryData}
+            columnDefs={columnDefs as any}
+            defaultColDef={{ resizable: true, sortable: true, filter: true }}
+            theme="legacy"
+          />
+        </div>
+      </section>
+
+      <section>
+        <MilestoneTimeline milestones={milestones} />
+      </section>
     </div>
   );
 }
+

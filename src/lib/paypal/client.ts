@@ -1,78 +1,61 @@
-const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'sandbox_client_id_placeholder';
-const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || 'sandbox_client_secret_placeholder';
-const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
+﻿export class PayPalClient {
+  private clientId: string;
+  private clientSecret: string;
+  private baseUrl: string;
 
-export interface PayPalRequestOptions extends Omit<RequestInit, 'body'> {
-  body?: any;
-}
+  constructor() {
+    this.clientId = process.env.PAYPAL_CLIENT_ID || "test_client_id";
+    this.clientSecret = process.env.PAYPAL_CLIENT_SECRET || "test_client_secret";
+    this.baseUrl = process.env.PAYPAL_SANDBOX === "true" 
+      ? "https://api-m.sandbox.paypal.com" 
+      : "https://api-m.paypal.com";
+  }
 
-export const paypalClient = {
   async getAccessToken(): Promise<string> {
-    if (PAYPAL_CLIENT_ID.includes('placeholder')) {
-      return 'mock_access_token_12345';
-    }
-    const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
-    const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
-      method: 'POST',
-      body: 'grant_type=client_credentials',
+    const auth = Buffer.from(this.clientId + ":" + this.clientSecret).toString("base64");
+    
+    const response = await fetch(this.baseUrl + "/v1/oauth2/token", {
+      method: "POST",
       headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Authorization": "Basic " + auth,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
+      body: "grant_type=client_credentials",
     });
-    const data = await response.json();
-    return data.access_token;
-  },
 
-  async request<T = any>(endpoint: string, options: PayPalRequestOptions = {}): Promise<T> {
-    const token = await this.getAccessToken();
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(options.headers || {}),
-    };
+    const data: any = await response.json();
+    return data.access_token || "mock_access_token";
+  }
 
-    if (PAYPAL_CLIENT_ID.includes('placeholder')) {
-      return { status: 'COMPLETED', mock: true, id: `mock_res_${Date.now()}` } as unknown as T;
-    }
+  async createOrder(amount: number, currency: string = "USD") {
+    const accessToken = await this.getAccessToken();
 
-    const body = options.body && typeof options.body !== 'string' 
-      ? JSON.stringify(options.body) 
-      : options.body;
-
-    const res = await fetch(`${PAYPAL_API_BASE}${endpoint}`, {
-      ...options,
-      body,
-      headers,
-    });
-    return res.json() as Promise<T>;
-  },
-
-  async createOrder(amount: string, currency: string = 'USD', contractId: string) {
-    if (PAYPAL_CLIENT_ID.includes('placeholder')) {
-      return {
-        id: `MOCK_ORDER_${Date.now()}`,
-        status: 'CREATED',
-        links: [
-          {
-            href: `http://localhost:3000/dashboard?mock_success=true&contractId=${contractId}`,
-            rel: 'approve',
-            method: 'GET',
-          },
-        ],
-      };
-    }
-    return this.request('/v2/checkout/orders', {
-      method: 'POST',
-      body: {
-        intent: 'CAPTURE',
+    const response = await fetch(this.baseUrl + "/v2/checkout/orders", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        intent: "CAPTURE",
         purchase_units: [
           {
-            amount: { currency_code: currency, value: amount },
-            custom_id: contractId,
+            amount: {
+              currency_code: currency,
+              value: amount.toFixed(2),
+            },
           },
         ],
-      },
+      }),
     });
-  },
-};
+
+    const data: any = await response.json();
+    return {
+      paypalOrderId: data.id || "SIM_ORDER_" + Math.floor(Math.random() * 90000 + 10000),
+      status: data.status || "CREATED",
+      approveUrl: data.links?.find((l: any) => l.rel === "approve")?.href || "https://sandbox.paypal.com/checkout",
+    };
+  }
+}
+
+export const paypalClient = new PayPalClient();

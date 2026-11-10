@@ -1,10 +1,16 @@
-datasource db {
+﻿datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
+}
+
+enum Role {
+  BUYER
+  SELLER
+  PLATFORM_ADMIN
 }
 
 enum ContractStatus {
@@ -14,110 +20,110 @@ enum ContractStatus {
   IN_PROGRESS
   VERIFYING
   DISPUTED
-  RELEASED
+  COMPLETED
   CANCELLED
 }
 
 enum MilestoneStatus {
   PENDING
+  FUNDED
   SUBMITTED
   VERIFIED
-  PAID
-  DISPUTED
+  RELEASED
+  REFUNDED
 }
 
 enum EscrowStatus {
   CREATED
   APPROVED
   COMPLETED
-  REFUNDED
+  VOIDED
 }
 
 model User {
-  id              String     @id @default(uuid())
-  email           String     @unique
-  name            String
-  paypalEmail     String     @unique
-  role            String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  buyerContracts  Contract[] @relation("BuyerContracts")
-  sellerContracts Contract[] @relation("SellerContracts")
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  name               String?
+  role               Role       @default(BUYER)
+  paypalPayerId      String?    @unique
+  paypalReceiverEmail String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  
+  buyerContracts     Contract[] @relation("BuyerContracts")
+  sellerContracts    Contract[] @relation("SellerContracts")
 }
 
 model Contract {
-  id          String          @id @default(uuid())
-  title       String
-  description String
-  totalAmount Decimal
-  currency    String          @default("USD")
-  status      ContractStatus  @default(DRAFT)
-  buyerId     String
-  sellerId    String
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  buyer       User            @relation("BuyerContracts", fields: [buyerId], references: [id], onDelete: Restrict)
-  seller      User            @relation("SellerContracts", fields: [sellerId], references: [id], onDelete: Restrict)
-  milestones  Milestone[]
-  escrowState EscrowState?
-  agentLogs   AgentLog[]
-  idempotency IdempotencyKey[]
-
-  @@index([buyerId])
-  @@index([sellerId])
+  id              String         @id @default(uuid())
+  title           String
+  description     String
+  status          ContractStatus @default(DRAFT)
+  totalAmount     Decimal        
+  currency        String         @default("USD")
+  
+  buyerId         String
+  buyer           User           @relation("BuyerContracts", fields: [buyerId], references: [id])
+  
+  sellerId        String
+  seller          User           @relation("SellerContracts", fields: [sellerId], references: [id])
+  
+  milestones      Milestone[]
+  escrowState     EscrowState?
+  agentLogs       AgentLog[]
+  idempotencyKeys IdempotencyKey[]
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model Milestone {
   id          String          @id @default(uuid())
   contractId  String
+  contract    Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
   title       String
-  deliverable String
-  amount      Decimal
+  amount      Decimal         
   status      MilestoneStatus @default(PENDING)
+  deliverable String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-
-  contract    Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
 
 model EscrowState {
-  id             String       @id @default(uuid())
-  contractId     String       @unique
-  paypalOrderId  String       @unique
-  captureId      String?      @unique
-  status         EscrowStatus @default(CREATED)
-  amountCaptured Decimal      @default(0.00)
-  feeAmount      Decimal      @default(0.00)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  contract       Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(uuid())
+  contractId         String       @unique
+  contract           Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  paypalOrderId      String       @unique
+  paypalCaptureId    String?      @unique
+  paypalPayoutBatchId String?
+  status             EscrowStatus @default(CREATED)
+  amountLocked       Decimal      
+  platformFeeAmount  Decimal      
+  freelancerAmount   Decimal      
+  rawPaypalPayload   String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }
 
 model AgentLog {
-  id               String   @id @default(uuid())
-  contractId       String
-  agentRole        String
-  action           String
-  promptTokens     Int      @default(0)
-  completionTokens Int      @default(0)
-  payload          String
-  createdAt        DateTime @default(now())
-
-  contract         Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  agentType   String
+  action      String
+  reasoning   String
+  toolCalls   String?
+  createdAt   DateTime @default(now())
 }
 
 model IdempotencyKey {
-  id         String   @id @default(uuid())
-  key        String   @unique
-  contractId String
-  response   String
-  createdAt  DateTime @default(now())
-  expiresAt  DateTime
-
-  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-
-  @@index([key])
+  id            String    @id @default(uuid())
+  key           String    @unique
+  requestHash   String
+  responseBody  String?
+  statusCode    Int?
+  contractId    String?
+  contract      Contract? @relation(fields: [contractId], references: [id])
+  lockedAt      DateTime  @default(now())
+  expiresAt     DateTime
 }
