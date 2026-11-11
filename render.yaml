@@ -1,36 +1,16 @@
-﻿services:
+services:
   - type: web
-    name: autosovereign-web
+    name: autosovereign
     env: node
-    region: oregon
-    plan: starter
-    buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npm run start
+    plan: free
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma db push && node prisma/seed.js && npm run start
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: autosovereign-db
-          property: connectionString
-      - key: PAYPAL_ENVIRONMENT
-        value: sandbox
-      - key: NODE_ENV
-        value: production
-
-  - type: worker
-    name: autosovereign-agent-worker
-    env: node
-    region: oregon
-    plan: starter
-    buildCommand: npm install && npx prisma generate
-    startCommand: npx ts-node src/workers/agent-executor.ts
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: autosovereign-db
-          property: connectionString
-
-databases:
-  - name: autosovereign-db
-    databaseName: autosovereign
-    user: postgres
-    plan: starter
+      - { key: DATABASE_URL, value: "file:./dev.db" }
+      - { key: PAYPAL_API_BASE, value: "https://api-m.sandbox.paypal.com" }
+      - { key: PAYPAL_CLIENT_ID, sync: false }
+      - { key: NEXT_PUBLIC_PAYPAL_CLIENT_ID, sync: false }
+      - { key: PAYPAL_CLIENT_SECRET, sync: false }
+      - { key: PAYPAL_WEBHOOK_ID, sync: false }
+      - { key: OPENAI_API_KEY, sync: false }
+      - { key: SELLER_PAYPAL_EMAIL, sync: false }

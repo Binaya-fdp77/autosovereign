@@ -73,12 +73,12 @@ export async function POST(req: Request) {
 
       await prisma.contract.update({
         where: { id: contract.id },
-        data: { status: 'REFUNDED_TO_BUYER' }
+        data: { status: 'CANCELLED' }
       });
     } else {
       await prisma.contract.update({
         where: { id: contract.id },
-        data: { status: 'SETTLED_PAYOUT_RELEASED' }
+        data: { status: 'COMPLETED' }
       });
     }
 

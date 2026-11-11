@@ -1,16 +1,23 @@
-﻿import { NextResponse } from "next/server";
-import { sseHub } from "@/lib/events/sse-hub";
+﻿
+import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const encoder = new TextEncoder();
+
   const stream = new ReadableStream({
     start(controller) {
-      const clientId = Date.now();
-      sseHub.addClient({ id: clientId, controller });
+      const initialEvent = `event: connected\ndata: ${JSON.stringify({ message: "Telemetry SSE stream active" })}\n\n`;
+      controller.enqueue(encoder.encode(initialEvent));
 
-      const encoder = new TextEncoder();
-      controller.enqueue(encoder.encode("event: connected\ndata: {\"status\":\"connected\"}\n\n"));
+      const interval = setInterval(() => {
+        const pingEvent = `event: ping\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`;
+        controller.enqueue(encoder.encode(pingEvent));
+      }, 15000);
 
-      reqClosedSignal(controller, () => sseHub.removeClient(clientId));
+      request.signal.addEventListener("abort", () => {
+        clearInterval(interval);
+        controller.close();
+      });
     },
   });
 
@@ -18,16 +25,8 @@ export async function GET() {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
+      "Connection": "keep-alive",
     },
   });
 }
 
-function reqClosedSignal(controller: ReadableStreamDefaultController, onClose: () => void) {
-  setTimeout(() => {
-    try {
-      controller.close();
-      onClose();
-    } catch {}
-  }, 86400000);
-}

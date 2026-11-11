@@ -1,63 +1,55 @@
-﻿import { NextResponse } from "next/server";
-import { payPalClient } from "@/lib/paypal/client";
-import { PrismaClient } from "@prisma/client";
+﻿
+import { NextResponse } from "next/server";
+import { getPayPalAccessToken } from "@/lib/paypal";
 
-const prisma = new PrismaClient();
+const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || "https://api-m.sandbox.paypal.com";
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { contractId, freelancerEmail } = await req.json();
+    const { payoutAmount, contractId, recipientEmail } = await request.json();
 
-    if (!contractId || !freelancerEmail) {
-      return NextResponse.json({ error: "Missing contractId or freelancerEmail parameters" }, { status: 400 });
-    }
+    const accessToken = await getPayPalAccessToken();
 
-    // Fetch escrow state from SQLite
-    const escrow = await prisma.escrowState.findUnique({
-      where: { contractId },
-    });
-
-    if (!escrow || escrow.status !== "COMPLETED") {
-      return NextResponse.json({ error: "Escrow not found or not funded/completed yet." }, { status: 400 });
-    }
-
-    const payoutAmount = Number(escrow.freelancerAmount);
-
-    // Trigger PayPal Payouts v1 API
-    const payoutResponse = await payPalClient.createPayout(
-      freelancerEmail,
-      payoutAmount,
-      "USD",
-      \AutoSovereign milestone payout for contract \\
-    );
-
-    // Update SQLite EscrowState with batch payout ID
-    await prisma.escrowState.update({
-      where: { id: escrow.id },
-      data: {
-        paypalPayoutBatchId: payoutResponse.batch_header?.payout_batch_id,
+    const response = await fetch(`${PAYPAL_API_BASE}/v1/payments/payouts`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
       },
+      body: JSON.stringify({
+        sender_batch_header: {
+          sender_batch_id: `payout_${contractId}_${Date.now()}`,
+          email_subject: "AutoSovereign milestone payout released",
+        },
+        items: [
+          {
+            recipient_type: "EMAIL",
+            amount: {
+              value: payoutAmount.toFixed(2),
+              currency: "USD",
+            },
+            receiver: recipientEmail || "freelancer@sandbox.paypal.com",
+            note: `AutoSovereign milestone payout for contract ${contractId}`,
+          },
+        ],
+      }),
     });
 
-    // Update Contract and Milestones to COMPLETED / RELEASED
-    await prisma.contract.update({
-      where: { id: contractId },
-      data: { status: "COMPLETED" },
-    });
+    const payoutData = await response.json();
 
-    await prisma.milestone.updateMany({
-      where: { contractId },
-      data: { status: "RELEASED" },
-    });
+    if (!response.ok) {
+      return NextResponse.json({ error: payoutData }, { status: response.status });
+    }
 
     return NextResponse.json({
       success: true,
-      contractId,
-      payoutBatchId: payoutResponse.batch_header?.payout_batch_id,
-      batchStatus: payoutResponse.batch_header?.batch_status,
-      amountDisbursed: payoutAmount,
+      batchId: payoutData.batch_header?.payout_batch_id,
+      status: payoutData.batch_header?.batch_status,
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+
+  } catch (err: any) {
+    console.error("Payout Release Error:", err.message);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+

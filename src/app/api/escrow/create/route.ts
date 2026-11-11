@@ -1,25 +1,53 @@
-﻿import { NextResponse } from "next/server";
-import { paypalClient } from "@/lib/paypal/client";
-import { PrismaClient } from "@prisma/client";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db/prisma";
+import { paypalRequest } from "@/lib/paypal";
+import { telemetryEmitter } from "@/lib/events/emitter";
 
-const prisma = new PrismaClient();
+const cents = (d: unknown) => Math.round(Number(d) * 100);
+const fmt = (c: number) => (c / 100).toFixed(2);
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { contractId, title, amount } = body;
+    const { contractId } = await request.json();
+    const contract = await prisma.contract.findUnique({ where: { id: contractId }, include: { escrowState: true } });
+    if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+    if (contract.escrowState?.status === "COMPLETED")
+      return NextResponse.json({ error: "Already funded" }, { status: 409 });
 
-    // Create PayPal v2 Order
-    const paypalOrder = await paypalClient.createOrder(amount || 1250.00);
+    const total = cents(contract.totalAmount);
+    if (!(total > 0)) return NextResponse.json({ error: "Invalid contract amount" }, { status: 422 });
+    const fee = Math.round(total * 0.05);
 
-    return NextResponse.json({
-      success: true,
-      contractId: contractId || "cnt_101",
-      paypalOrderId: paypalOrder.paypalOrderId,
-      status: "LOCKED_IN_ESCROW",
-      approveUrl: paypalOrder.approveUrl,
+    const order = await paypalRequest<any>("/v2/checkout/orders", {
+      method: "POST",
+      requestId: `order-${contract.id}`,
+      body: {
+        intent: "CAPTURE",
+        purchase_units: [{
+          reference_id: contract.id,
+          custom_id: contract.id,
+          description: contract.title.slice(0, 120),
+          amount: { currency_code: contract.currency, value: fmt(total) },
+        }],
+      },
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+
+    await prisma.escrowState.upsert({
+      where: { contractId: contract.id },
+      create: {
+        contractId: contract.id, paypalOrderId: order.id, status: "CREATED",
+        amountLocked: fmt(total), platformFeeAmount: fmt(fee), freelancerAmount: fmt(total - fee),
+      },
+      update: { paypalOrderId: order.id, status: "CREATED" },
+    });
+
+    telemetryEmitter.emit("telemetry", {
+      type: "ESCROW_CREATED",
+      message: `[Escrow] Order ${order.id} created for $${fmt(total)}`,
+      timestamp: new Date().toISOString(),
+    });
+    return NextResponse.json({ success: true, paypalOrderId: order.id, status: order.status });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message, details: e.details }, { status: e.status || 500 });
   }
 }
