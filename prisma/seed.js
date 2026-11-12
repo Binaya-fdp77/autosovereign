@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -11,7 +12,7 @@ async function main() {
   });
 
   // Payouts go to this address, so it MUST be your sandbox PERSONAL account email.
-  const sellerPaypal = process.env.SELLER_PAYPAL_EMAIL || 'seller-sandbox@personal.example.com';
+  const sellerPaypal = process.env.SELLER_PAYPAL_EMAIL || 'unset@example.com';
   const seller = await prisma.user.upsert({
     where: { email: 'seller@autosovereign.test' },
     update: { paypalReceiverEmail: sellerPaypal },

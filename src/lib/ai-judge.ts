@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
 const Verdict = z.object({
@@ -10,10 +10,13 @@ const Verdict = z.object({
 export type Verdict = z.infer<typeof Verdict>;
 
 export async function judge(task: string, evidence: string): Promise<Verdict> {
-  if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
+  if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
+  const groq = createOpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY });
   const { text } = await generateText({
-    model: openai("gpt-4o"),
+    model: groq.chat("openai/gpt-oss-120b"),
     temperature: 0,
+    maxRetries: 1,
+    abortSignal: AbortSignal.timeout(25000),
     system:
       "You are an escrow verification agent. You never see or decide payment amounts. " +
       'Reply with ONLY JSON: {"approved":boolean,"confidence":0-1,"reasons":[strings]}. ' +

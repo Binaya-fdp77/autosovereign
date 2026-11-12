@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (c?.status === "COMPLETED") {
       await prisma.escrowState.update({ where: { contractId }, data: { status: "COMPLETED", paypalCaptureId: c.id } });
       await prisma.contract.update({ where: { id: contractId }, data: { status: "LOCKED_IN_ESCROW" } });
-      await prisma.milestone.updateMany({ where: { contractId, status: "PENDING" }, data: { status: "FUNDED" } });
+      await prisma.milestone.updateMany({ where: { contractId, status: { in: ["PENDING", "REFUNDED"] } }, data: { status: "FUNDED" } });
     }
     telemetryEmitter.emit("telemetry", {
       type: "ESCROW_FUNDED",

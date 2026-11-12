@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const order = await paypalRequest<any>("/v2/checkout/orders", {
       method: "POST",
-      requestId: `order-${contract.id}`,
+      requestId: `order-${contract.id}-${Date.now()}`,
       body: {
         intent: "CAPTURE",
         purchase_units: [{
