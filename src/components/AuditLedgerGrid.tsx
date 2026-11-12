@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
@@ -49,7 +49,7 @@ export default function AuditLedgerGrid({ data }: { data: AgentLogItem[] }) {
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             Immutable Agent Telemetry Ledger
           </h3>
-          <p className="text-gray-400 text-xs">Powered by AG Grid Enterprise Data Virtualization</p>
+          <p className="text-gray-400 text-xs">Powered by AG Grid Community</p>
         </div>
       </div>
       <div className="ag-theme-alpine-dark" style={{ height: 450, width: '100%' }}>

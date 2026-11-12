@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import BuyerCheckout from "@/components/BuyerCheckout";
+import AuditLedgerGrid from "@/components/AuditLedgerGrid";
 
 async function post(url: string, body: object) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -148,6 +149,12 @@ export default function DashboardClient({ contracts }: { contracts: any[] }) {
           </div>
         </div>
       </div>
-    </div>
+          <div className="mt-8">
+        <AuditLedgerGrid
+          data={contracts
+            .flatMap((c: any) => c.agentLogs || [])
+            .map((l: any) => ({ ...l, payload: l.payload ?? "", createdAt: new Date(l.createdAt).toISOString() }))}
+        />
+      </div>    </div>
   );
 }
